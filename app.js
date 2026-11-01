@@ -1,0 +1,153 @@
+'use strict';
+const $ = id => document.getElementById(id), command = $('command'), log = $('log'), actions = $('actions');
+const safeText = (s) => String(s || '').slice(0, 3000);
+const say = (s) => { log.textContent = s; actions.replaceChildren(); };
+
+function action(label, url, detail) {
+  say(detail || `Ready to ${label}. Confirm below.`);
+  const b = document.createElement('button');
+  b.textContent = `Continue: ${label}`;
+  b.onclick = () => {
+    if (!confirm(`Open ${label}?`)) return;
+    window.location.href = url;
+  };
+  actions.append(b);
+}
+
+function notes() {
+  const n = JSON.parse(localStorage.getItem('pa_notes') || '[]');
+  $('notes').textContent = n.length ? n.map((x, i) => `${i + 1}. ${x}`).join('\n') : 'No saved notes.';
+}
+
+const encoded = encodeURIComponent;
+
+async function run() {
+  const raw = command.value.trim();
+  if (!raw) return say('Enter a command first.');
+  const s = raw.toLowerCase();
+
+  if (/^(run|launch|start) (my )?shortcut\s+/i.test(raw)) {
+    const name = raw.replace(/^(run|launch|start) (my )?shortcut\s+/i, '').trim();
+    if (!name) return say('Name the Shortcut.');
+    return action(`Shortcut “${name}”`, `shortcuts://run-shortcut?name=${encoded(name)}`, `This opens an existing Apple Shortcut named “${name}”. It must already be created in the Shortcuts app.`);
+  }
+
+  if (/^(make a note|save note|note)\s*:?\s*/i.test(raw)) {
+    const note = raw.replace(/^(make a note|save note|note)\s*:?\s*/i, '').trim();
+    if (!note) return say('Tell me what note to save.');
+    const n = JSON.parse(localStorage.getItem('pa_notes') || '[]');
+    n.unshift(note);
+    localStorage.setItem('pa_notes', JSON.stringify(n.slice(0, 100)));
+    notes();
+    return say(`Saved locally: ${note}`);
+  }
+
+  if (/^(open )?(maps?|navigate|directions)\b/i.test(raw)) {
+    let q = raw.replace(/^(open )?(maps?|navigate|directions)\s*(for|to)?\s*/i, '').trim();
+    if (!q) return action('Apple Maps', 'https://maps.apple.com/');
+    return action(`Maps search: ${q}`, `https://maps.apple.com/?q=${encoded(q)}`);
+  }
+
+  if (/^(search|google|look up|find on web)\b/i.test(raw)) {
+    const q = raw.replace(/^(search( the web)?( for)?|google|look up|find on web)\s*/i, '').trim();
+    if (!q) return say('What should I search for?');
+    return action(`web search: ${q}`, `https://www.google.com/search?q=${encoded(q)}`);
+  }
+
+  if (/^(call|dial)\s+/i.test(raw)) {
+    const n = raw.replace(/^(call|dial)\s+/i, '').trim();
+    if (!/^[+\d\s()\-]{5,22}$/.test(n)) return say('For privacy, enter a phone number rather than a contact name.');
+    return action(`call ${n}`, `tel:${n.replace(/[^+\d]/g, '')}`);
+  }
+
+  if (/^(text|sms|message)\s+/i.test(raw)) {
+    const m = raw.match(/^(?:text|sms|message)\s+([+\d\s()\-]{5,22})(?:\s+(?:saying|that|:|,)?\s*(.*))?$/i);
+    if (!m) return say('Use: Text +919876543210 saying Hello');
+    const num = m[1].replace(/[^+\d]/g, '');
+    const body = m[2] || '';
+    return action(`SMS draft to ${num}`, `sms:${num}${body ? '&body=' + encoded(body) : ''}`, 'Open an SMS draft. You review and send it yourself.');
+  }
+
+  if (/^(email|mail)\s+/i.test(raw)) {
+    const m = raw.match(/^(?:email|mail)\s+([^\s]+@[^\s]+)(?:\s+(?:saying|that|:)?\s*(.*))?$/i);
+    if (!m) return say('Use: Email person@example.com saying Hello');
+    return action(`email draft to ${m[1]}`, `mailto:${m[1]}?body=${encoded(m[2] || '')}`, 'Open an email draft. You review and send it yourself.');
+  }
+
+  if (/^(remind me|create reminder|add reminder)\b/i.test(raw)) {
+    const task = raw.replace(/^(remind me( to)?|create reminder( to)?|add reminder( to)?)\s*/i, '').trim();
+    if (!task) return say('What should I remind you about?');
+    const name = 'Phone Agent Reminder';
+    return action(`Shortcut “${name}”`, `shortcuts://run-shortcut?name=${encoded(name)}&input=text&text=${encoded(task)}`, `To create a native reminder, first make a Shortcut called “${name}” with the Add New Reminder action using Shortcut Input as its title. This passes: ${task}. Dates and times need to be configured in the Shortcut.`);
+  }
+
+  const endpoint = localStorage.getItem('pa_endpoint');
+  if (endpoint) {
+    say('Asking your AI endpoint…');
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: raw })
+      });
+      if (!response.ok) throw Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      return say(safeText(data.reply || 'No reply returned.'));
+    } catch (e) {
+      return say(`AI connection failed: ${e.message}. Check endpoint and CORS settings.`);
+    }
+  }
+
+  say('I can run Shortcuts by name, open Maps, search the web, draft SMS/email, start calls to numbers, save notes, and pass reminder text to a Shortcut. For general AI questions, configure a secure AI endpoint in Settings.');
+}
+
+$('run').onclick = run;
+document.querySelectorAll('[data-cmd]').forEach(b => b.onclick = () => {
+  command.value = b.dataset.cmd;
+  run();
+});
+
+$('endpoint').value = localStorage.getItem('pa_endpoint') || '';
+$('save').onclick = () => {
+  const u = $('endpoint').value.trim();
+  if (u && !/^https:\/\//i.test(u)) return say('Endpoint must start with https://');
+  if (u) localStorage.setItem('pa_endpoint', u);
+  else localStorage.removeItem('pa_endpoint');
+  say('Endpoint setting saved.');
+};
+
+$('clear').onclick = () => {
+  if (confirm('Delete locally saved notes and endpoint?')) {
+    localStorage.removeItem('pa_endpoint');
+    localStorage.removeItem('pa_notes');
+    $('endpoint').value = '';
+    notes();
+    say('Local data cleared.');
+  }
+};
+
+const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (!Recognition) {
+  $('mic').onclick = () => say('Speech recognition is not available in this browser. Use the iPhone keyboard microphone to dictate into the command box.');
+} else {
+  $('mic').onclick = () => {
+    const r = new Recognition();
+    r.lang = 'en-IN';
+    r.interimResults = false;
+    r.maxAlternatives = 1;
+    r.onstart = () => say('Listening…');
+    r.onresult = e => {
+      command.value = e.results[0][0].transcript;
+      say('Heard: ' + command.value + '\nTap Run command to continue.');
+    };
+    r.onerror = e => say('Microphone error: ' + e.error + '. You can use keyboard dictation instead.');
+    try {
+      r.start();
+    } catch (e) {
+      say('Could not start microphone: ' + e.message);
+    }
+  };
+}
+
+notes();
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
