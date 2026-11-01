@@ -1,0 +1,29 @@
+# Phone Agent PWA — free starter
+
+Derived as a web-compatible adaptation of PhoneAgentiOS feature ideas, not a conversion of native Swift APIs.
+
+## Publish free from iPhone
+1. Create a GitHub account and a **private** repository for development.
+2. Upload these files using GitHub's web UI (or extract ZIP using Files first).
+3. To publish using GitHub Pages on the free plan, a **public** repository is generally required. This exposes the code; **never include secrets or personal data**. Alternatively choose a free static host supporting private source repositories (subject to provider limits).
+4. In GitHub Settings → Pages choose Deploy from branch, main, /(root). Wait for the HTTPS site URL.
+5. Open the HTTPS URL in Safari → Share → Add to Home Screen → Add.
+
+## What works
+- Text commands and tap-to-speak where supported; keyboard dictation fallback.
+- Confirmation before launching Apple Shortcuts by name, Maps, calls, SMS and email drafts.
+- Reminders through a manually configured Apple Shortcut called `Phone Agent Reminder` that accepts Shortcut Input and uses Add New Reminder.
+- Offline local notes and cached app shell after first online load.
+- Optional AI endpoint (POST {message}, response {reply}); requires your own secure server; no AI model or free API included.
+
+## Limitations
+- Cannot directly access iOS Calendar, Contacts, Reminders, Siri App Intents, or the Action Button like the native Swift project.
+- Cannot silently send messages or run arbitrary phone actions.
+- `shortcuts://` URL launches may depend on iOS/browser and user approval; test on device.
+- The PWA stores notes/endpoint locally in browser storage; not encrypted secure storage. Do not store secrets.
+- Browser speech recognition may require network access, permissions, Siri configuration, and may vary by iOS version.
+- No deployed site, tested iPhone build, or AI server is included.
+
+## Update notes
+- Improved service worker lifecycle handling so new app versions are activated reliably.
+- Added cache cleanup to avoid stale assets lingering after updates.
